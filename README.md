@@ -46,38 +46,56 @@
 ```bash
 A-PAS/
 ├── ai_model/          # AI 모델 학습 및 변환 코드
-│   ├── yolo_train/    # 객체 탐지 모델 학습
-│   └── lstm_train/    # 시계열 예측 모델 학습
-├── embedded/          # 라즈베리 파이 구동 소스코드
+│   └── yolo_train/    # YOLOv8 학습 스크립트 (train.py)
+├── embedded/          # 라즈베리 파이 제어 코드
 │   ├── camera.py      # 영상 수집 및 전처리
-│   ├── detection.py   # YOLO 객체 탐지 및 추론
-│   ├── prediction.py  # 위험도 예측 알고리즘 (LSTM)
 │   └── alert.py       # LED 및 부저 제어 로직
 ├── dataset/           # 학습용 데이터셋 (Git 제외)
-├── requirements.txt   # 의존성 패키지 목록
+├── requirements.txt   # [PC용] 학습 환경 설정 파일
+├── requirements-pi.txt # [Pi용] 실행 환경 설정 파일
 └── main.py            # 메인 실행 파일
 ```
 <br>
 
 ## 시작하기 (Getting Started)
+이 프로젝트는 **학습용 PC(Windows/Linux)**와 **실행용 라즈베리 파이(Embedded)**의 환경 설정 방법이 다릅니다.
 
-### 1. 환경 설정 (Environment Setup)
-라즈베리 파이 환경에서 가상환경을 생성하고 필수 라이브러리를 설치합니다.
+### 1. 가상환경 생성 (공통)
+프로젝트 루트 경로에서 가상환경을 생성합니다.
 
 ```bash
-# 1. 가상환경 생성 및 활성화
-python3 -m venv a-pas-env
-source a-pas-env/bin/activate  
-# (Windows의 경우: a-pas-env\Scripts\activate)
+## 가상환경 생성
+python -m venv a-pas-env
 
-# 2. 필수 패키지 설치
-pip install opencv-python-headless ultralytics tflite-runtime rpi-lgpio
+# 가상환경 실행 (Windows)
+.\a-pas-env\Scripts\activate
+
+# 가상환경 실행 (Mac/Linux/Raspberry Pi)
+source a-pas-env/bin/activate
 ```
 <br>
 
-## 2. 실행 방법 (Run)
-메인 시스템을 구동하여 탐지 및 경고 시스템을 시작합니다.
+## 2.라이브러리 설치 (Environment Setup)
+Case A: 학습용 PC / 노트북 (Windows) GPU 학습 및 데이터 분석을 위한 라이브러리(PyTorch, Ultralytics 등)를 설치합니다.
 
+```bash
+pip install -r requirements.txt
+```
+Case B: 라즈베리 파이 5 (Run-time) 실시간 추론을 위한 경량화 라이브러리(TFLite, GPIO 등)를 설치합니다.
+```bash
+pip install -r requirements_pi.txt
+```
+
+<br>
+
+## 사용방법(Usage)
+### 1.AI 모델 학습 (Training on PC)
+데이터셋이 준비되면 PC에서 아래 명령어로 학습을 진행합니다.
+```bash
+python ai_model/yolo_train/train.py
+```
+### 메인 시스템 구동 (Running on Pi)
+라즈베리 파이에서 시스템을 시작합니다. (카메라 및 센서 연결 필수)
 ```bash
 python main.py
 ```
