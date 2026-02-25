@@ -82,7 +82,7 @@ source a-pas-env/bin/activate
 ```
 <br>
 
-## 2. 라이브러리 설치 (Environment Setup)
+### 2. 라이브러리 설치 (Environment Setup)
 Case A: 학습용 PC / 노트북 (Windows) GPU 학습 및 데이터 분석을 위한 라이브러리(PyTorch, Ultralytics 등)를 설치합니다.
 
 ```bash

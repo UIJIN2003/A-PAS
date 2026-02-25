@@ -4,20 +4,23 @@ import torch.nn as nn
 import numpy as np
 from ultralytics import YOLO
 from collections import deque
+from gpiozero import LED  # ✅ LED 제어 라이브러리 추가
 
 # ==========================================
-# ⚙️ [설정] 학습(tr_trajectory.py)과 반드시 일치해야 함
+# ⚙️ [설정] 하드웨어 및 모델 설정
 # ==========================================
 IMG_W, IMG_H = 1920, 1080 
-SEQ_LENGTH = 10     # 5에서 10으로 수정 (10-10 법칙 적용)
-PRED_LENGTH = 10    # 3에서 10으로 수정 (1초 뒤 예측)
+SEQ_LENGTH = 10 
+PRED_LENGTH = 10 
 HIDDEN_SIZE = 128
 NUM_LAYERS = 2
 
-YOLO_MODEL_PATH = "yolov8n.pt"
-LSTM_MODEL_PATH = "models/best_trajectory_model.pth"
+YOLO_MODEL_PATH = "yolov8s.pt"
+LSTM_MODEL_PATH = "models/best_model_pi.pt"
 VIDEO_PATH = "my_video.mp4" 
 
+# 하드웨어 설정
+alert_led = LED(18)  # ✅ GPIO 18번 핀에 LED 연결
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ==========================================
@@ -39,87 +42,95 @@ class LSTMModel(nn.Module):
         return out.view(-1, PRED_LENGTH, 2)
 
 # 모델 로드
+print("📦 모델 로드 중...")
 yolo_model = YOLO(YOLO_MODEL_PATH)
 lstm_model = LSTMModel(2, HIDDEN_SIZE, NUM_LAYERS).to(device)
-lstm_model.load_state_dict(torch.load(LSTM_MODEL_PATH, map_location=device))
+lstm_model = torch.jit.load(LSTM_MODEL_PATH, map_location=device)
 lstm_model.eval()
 
 track_history = {}
-last_predictions = {} # 이상 행동(Loss) 계산을 위한 저장소
+last_predictions = {}
 cap = cv2.VideoCapture(VIDEO_PATH)
 
 # ==========================================
 # 🎬 [실행] 메인 루프
 # ==========================================
-while cap.isOpened():
-    success, frame = cap.read()
-    if not success: break
-    frame = cv2.resize(frame, (IMG_W, IMG_H))
-    
-    results = yolo_model.track(frame, persist=True, verbose=False)
-    collision_risk = False
-    all_current_preds = {} # 이번 프레임의 모든 미래 좌표 저장
+print("🚀 A-PAS 모니터링 시작!")
 
-    if results[0].boxes.id is not None:
-        boxes = results[0].boxes.xywh.cpu().numpy()
-        track_ids = results[0].boxes.id.int().cpu().tolist()
+try: # ✅ 예외 처리를 통해 안전한 종료 보장
+    while cap.isOpened():
+        success, frame = cap.read()
+        if not success: break
+        frame = cv2.resize(frame, (IMG_W, IMG_H))
         
-        for box, track_id in zip(boxes, track_ids):
-            x, y, w, h = box
-            curr_pos = np.array([float(x), float(y)])
+        # imgsz=320으로 설정하여 라즈베리 파이 부하 감소
+        results = yolo_model.track(frame, persist=True, imgsz=320, conf=0.2, verbose=False)
+        collision_risk = False
+        all_current_preds = {}
+
+        if results[0].boxes.id is not None:
+            boxes = results[0].boxes.xywh.cpu().numpy()
+            track_ids = results[0].boxes.id.int().cpu().tolist()
             
-            # 1. 이상 행동(Anomaly Loss) 계산
-            if track_id in last_predictions:
-                # 이전 프레임에서 예측했던 '현재 시점'의 위치와 실제 위치 비교
-                pred_pos = last_predictions[track_id]
-                anomaly_loss = np.linalg.norm(curr_pos - pred_pos)
+            for box, track_id in zip(boxes, track_ids):
+                x, y, w, h = box
+                curr_pos = np.array([float(x), float(y)])
                 
-                # 오차가 크면 (예: 50px 이상) 경고 텍스트 표시
-                if anomaly_loss > 50:
-                    cv2.putText(frame, f"UNSTABLE: {int(anomaly_loss)}", (int(x), int(y)-40),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 2)
+                # 1. 이상 행동(Anomaly) 시각화
+                if track_id in last_predictions:
+                    pred_pos = last_predictions[track_id]
+                    anomaly_loss = np.linalg.norm(curr_pos - pred_pos)
+                    if anomaly_loss > 50:
+                        cv2.putText(frame, f"UNSTABLE: {int(anomaly_loss)}", (int(x), int(y)-40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 2)
 
-            if track_id not in track_history:
-                track_history[track_id] = deque(maxlen=SEQ_LENGTH)
-            track_history[track_id].append(curr_pos)
+                if track_id not in track_history:
+                    track_history[track_id] = deque(maxlen=SEQ_LENGTH)
+                track_history[track_id].append(curr_pos)
 
-            # 2. 미래 경로 예측
-            if len(track_history[track_id]) == SEQ_LENGTH:
-                input_seq = np.array(list(track_history[track_id]))
-                input_seq[:, 0] /= IMG_W
-                input_seq[:, 1] /= IMG_H
-                input_seq_torch = torch.FloatTensor([input_seq]).to(device)
-                
-                with torch.no_grad():
-                    pred = lstm_model(input_seq_torch).cpu().numpy()[0]
-                    pred[:, 0] *= IMG_W
-                    pred[:, 1] *= IMG_H
-                    all_current_preds[track_id] = pred
-                    # 다음 프레임 오차 계산을 위해 첫 번째 예측 지점 저장
-                    last_predictions[track_id] = pred[0] 
+                # 2. 미래 경로 예측
+                if len(track_history[track_id]) == SEQ_LENGTH:
+                    input_seq = np.array(list(track_history[track_id]))
+                    input_seq[:, 0] /= IMG_W
+                    input_seq[:, 1] /= IMG_H
+                    input_seq_torch = torch.FloatTensor([input_seq]).to(device)
+                    
+                    with torch.no_grad():
+                        pred = lstm_model(input_seq_torch).cpu().numpy()[0]
+                        pred[:, 0] *= IMG_W
+                        pred[:, 1] *= IMG_H
+                        all_current_preds[track_id] = pred
+                        last_predictions[track_id] = pred[0] 
 
-                    # 예측 경로 시각화 (빨간 선)
-                    cv2.polylines(frame, [pred.astype(np.int32)], False, (0, 0, 255), 2)
+                        # 예측 경로 시각화
+                        cv2.polylines(frame, [pred.astype(np.int32)], False, (0, 0, 255), 2)
 
-        # 3. 충돌 감지 로직 (객체 간 거리 비교)
-        for id1, pred1 in all_current_preds.items():
-            for id2, pred2 in all_current_preds.items():
-                if id1 >= id2: continue # 중복 검사 방지
-                
-                # 미래 1초 뒤(마지막 점)의 거리 계산
-                dist = np.linalg.norm(pred1[-1] - pred2[-1])
-                if dist < 100: # 100픽셀 이내 접근 시 위험
-                    collision_risk = True
-                    cv2.line(frame, tuple(pred1[-1].astype(int)), tuple(pred2[-1].astype(int)), (0, 255, 255), 3)
+            # 3. 충돌 감지 로직
+            for id1, pred1 in all_current_preds.items():
+                for id2, pred2 in all_current_preds.items():
+                    if id1 >= id2: continue 
+                    dist = np.linalg.norm(pred1[-1] - pred2[-1])
+                    if dist < 100: 
+                        collision_risk = True
+                        cv2.line(frame, tuple(pred1[-1].astype(int)), tuple(pred2[-1].astype(int)), (0, 255, 255), 3)
 
-    # 4. 전체 시스템 경고 출력
-    if collision_risk:
-        cv2.rectangle(frame, (0, 0), (IMG_W, IMG_H), (0, 0, 255), 20)
-        cv2.putText(frame, "!!! COLLISION WARNING !!!", (IMG_W//2-350, 80), 
-                    cv2.FONT_HERSHEY_DUPLEX, 2, (0, 0, 255), 4)
+        # ==========================================
+        # 💡 [핵심] 하드웨어 피드백 (LED 제어)
+        # ==========================================
+        if collision_risk:
+            alert_led.on()  # 🔴 위험 시 LED 점등
+            cv2.rectangle(frame, (0, 0), (IMG_W, IMG_H), (0, 0, 255), 20)
+            cv2.putText(frame, "!!! COLLISION WARNING !!!", (IMG_W//2-350, 80), 
+                        cv2.FONT_HERSHEY_DUPLEX, 2, (0, 0, 255), 4)
+        else:
+            alert_led.off() # 🟢 안전 시 LED 소등
 
-    cv2.imshow("A-PAS Final Monitoring", frame)
-    if cv2.waitKey(1) & 0xFF == ord("q"): break
+        # 결과 창 출력 (SSH 환경에서는 주석 처리 필요할 수 있음)
+        cv2.imshow("A-PAS Final Monitoring", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"): break
 
-cap.release()
-cv2.destroyAllWindows()
+finally: # ✅ 프로그램 종료 시 반드시 실행
+    print("\nCleaning up...")
+    alert_led.off() # LED 끄기
+    cap.release()
+    cv2.destroyAllWindows()
