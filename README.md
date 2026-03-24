@@ -3,7 +3,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.x-blue)
 ![Raspberry Pi](https://img.shields.io/badge/Hardware-Raspberry%20Pi%205-C51A4A)
-![Hailo-8](https://img.shields.io/badge/AI-Hailo--8%20AI%20HAT%2B%2026TOPS-brightgreen)
+![Hailo-8](https://img.shields.io/badge/NPU-Hailo--8%20AI%20HAT%2B%2026TOPS-brightgreen)
 ![YOLOv8](https://img.shields.io/badge/Model-YOLOv8n-green)
 ![PyTorch](https://img.shields.io/badge/Framework-PyTorch-orange)
 
@@ -27,7 +27,7 @@
 | 구분 | 장비명 | 사양 | 용도 |
 | --- | --- | --- | --- |
 | **Main Controller** | Raspberry Pi 5 | 16GB LPDDR4X | 전체 시스템 제어 및 LSTM 추론 |
-| **AI Accelerator** | Hailo-8 AI HAT+ | 26 TOPS (PCIe M.2) | YOLOv8 실시간 추론 (430+ FPS) |
+| **AI Accelerator** | Hailo-8 AI HAT+ | 26 TOPS NPU (PCIe M.2) | YOLOv8 실시간 추론 (430+ FPS) |
 | **Vision Input** | HDMI-to-CSI 캡처 보드 | 22핀 MIPI CSI | CARLA 시뮬레이션 영상 수신 |
 | **Display** | 포터블 모니터 | 15인치 Micro HDMI | Risk Score 및 예측 경로 시각화 |
 | **Alert System** | LED Strip + Active Buzzer | WS2812B | 위험 상황 알림 (시각/청각) |
@@ -37,12 +37,12 @@
 ### AI 추론 역할 분담
 | 모델 | 실행 위치 | 이유 |
 | --- | --- | --- |
-| **YOLOv8n** (객체 탐지) | Hailo-8 AI HAT+ | 이미지 병렬 연산 → TPU 최적화 |
+| **YOLOv8n** (객체 탐지) | Hailo-8 NPU | 이미지 병렬 연산 → NPU 최적화 |
 | **Trajectory LSTM** (경로 예측) | Raspberry Pi 5 CPU | 순차적 시계열 연산 → CPU 적합 |
 
 ### Technology Stack
 * **AI Model**
-    * **Detection**: YOLOv8n (Optimized for Hailo-8, int8 양자화)
+    * **Detection**: YOLOv8n (Optimized for Hailo-8 NPU, int8 양자화)
     * **Prediction**: Trajectory LSTM (PyTorch) - 17개 피처 기반 이동 경로 예측 및 충돌 감지
 * **Software**
     * Python 3.x, OpenCV, PyTorch, hailo-platform
@@ -56,7 +56,7 @@ CARLA Simulator (PC)
 HDMI-to-CSI 캡처 보드
         ↓ CSI
   Raspberry Pi 5
-        ├── Hailo-8 AI HAT+: YOLOv8 추론 → 객체 좌표 추출 (430+ FPS)
+        ├── Hailo-8 NPU: YOLOv8 추론 → 객체 좌표 추출 (430+ FPS)
         │           ↓
         └── RPi CPU: LSTM 추론 → TTC(충돌 예상 시간) 계산
                     ↓ 위험 감지
@@ -138,11 +138,11 @@ pip install -r requirements-pi.txt
 # 학습 코드가 있는 폴더로 이동
 cd ai_model/yolo_train
 
-# [방법 A] 영상 → CSV 변환 (video_to_csv.py)
+# [방법 A] 영상 → CSV 변환
 python video_to_csv.py
 # 결과: data/ 폴더에 normal_data_*.csv 파일 생성
 
-# [방법 B] JPG 이미지 → NPY 변환 (17개 피처, jpg_to_csv.py)
+# [방법 B] JPG 이미지 → NPY 변환 (17개 피처)
 python jpg_to_csv.py
 # 결과: X_Training_17f.npy, y_Training_17f.npy 등 생성
 ```
@@ -189,7 +189,7 @@ python main.py
 | 항목 | 값 |
 | --- | --- |
 | **총 시퀀스 수** | 124,492개 (Train 112,042 / Val 12,450) |
-| **입력 피처 수** | 17개 (위치, 속도, 가속도, 방향, 크기, 클래스) |
+| **입력 피처 수** | 17개 (위치, 속도, 가속도, 방향, 크기, 클래스 원-핫) |
 | **관찰 길이** | 20 프레임 (2.0초 @ 10FPS) |
 | **예측 길이** | 10 프레임 (1.0초 @ 10FPS) |
 | **데이터 소스** | CCTV 영상 (video_to_csv) + JPG 이미지 (jpg_to_csv) |
@@ -197,7 +197,7 @@ python main.py
 <br>
 
 ## ⚠️ 주의사항
-* 전원 어댑터는 반드시 **30W (5V 6A) 이상 PD 어댑터**를 사용하세요. 27W 이하는 Hailo-8 피크 전력 부족으로 불안정할 수 있습니다.
+* 전원 어댑터는 반드시 **30W (5V 6A) 이상 PD 어댑터**를 사용하세요. 27W 이하는 Hailo-8 NPU 피크 전력 부족으로 불안정할 수 있습니다.
 * MicroSD는 **V30 등급 이상** (SanDisk Extreme 또는 공식 Raspberry Pi 카드)을 권장합니다.
 * `models/` 폴더 내 `.pth` 파일은 `.gitignore`에 의해 Git에서 제외됩니다. 라즈베리 파이로 직접 전송하세요.
 
