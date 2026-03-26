@@ -9,19 +9,19 @@ import matplotlib.pyplot as plt
 # ==========================================
 # ⚙️ [설정]
 # ==========================================
+IMG_W, IMG_H = 1920, 1080
 INPUT_SIZE   = 17
 HIDDEN_SIZE  = 128
 NUM_LAYERS   = 2
-SEQ_LENGTH   = 20
+SEQ_LENGTH   = 10
 PRED_LENGTH  = 10
 BATCH_SIZE   = 64
 EPOCHS       = 100
 LR           = 0.001
-EARLY_STOP_PATIENCE = 10   # 10에포크 동안 개선 없으면 종료
+EARLY_STOP_PATIENCE = 15   # 10에포크 동안 개선 없으면 종료
 MODEL_DIR    = "models"
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-IMG_W, IMG_H = 1920, 1080
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"🖥️  Device: {device}")
 
@@ -112,8 +112,11 @@ def train():
 
     # LR Scheduler: val_loss가 5에포크 동안 안 줄면 LR 절반으로
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', patience=5, factor=0.5, verbose=True
+    optimizer, mode='min', patience=5, factor=0.5
     )
+
+    current_lr = optimizer.param_groups[0]['lr']
+    print(f"  📉 현재 LR: {current_lr:.6f}")
 
     best_val_loss    = float('inf')
     early_stop_count = 0
