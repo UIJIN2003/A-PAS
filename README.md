@@ -1,5 +1,6 @@
-# A-PAS (AI-based Pedestrian Alert System)
+# 🚶‍♂️ A-PAS (AI-based Pedestrian Alert System)
 ### 보행자 중심의 엣지 AI 스마트 횡단보도 경고 시스템
+> 한국공학대학교(TUKOREA) 전자공학부 졸업작품 (2026.01 ~ 2026.07, 진행 중)
 
 ![Python](https://img.shields.io/badge/Python-3.x-blue)
 ![Raspberry Pi](https://img.shields.io/badge/Hardware-Raspberry%20Pi%205-C51A4A)
@@ -17,11 +18,27 @@
 > * **Vision-only Solution**: 라이다 없이 영상과 AI만으로 정밀 충돌 예측
 > * **Edge AI**: 클라우드 없이 독립적으로 작동하는 고성능 엣지 컴퓨팅 구현
 
-**개발 기간**: 2026.01.07 ~ 2026.07 (약 7개월)
+* **개발 기간**: 2026.01.07 ~ 2026.07 (약 7개월, 진행 중)
+* **팀 구성 및 역할**: 4인 팀 / **Team Leader (System Integration & Edge HW Pipeline 최적화 담당)**
 
 <br>
 
-## 시스템 아키텍처 (System Architecture)
+## 🚀 핵심 문제 해결 및 시스템 최적화 (Key Engineering Achievements)
+자원과 환경이 제한된 엣지 디바이스 위에서 실시간 AI 파이프라인을 구축하며 다음과 같은 시스템/데이터 구조 최적화를 수행했습니다.
+
+**1. 고품질 학습 데이터 파이프라인 전면 재구축 (Stitching & Optimization)**
+* **이슈**: AI 허브 공개 데이터가 10프레임 단위로 분절되어 있어, 설계한 30프레임 규격(과거 20프레임 입력 + 미래 10프레임 예측)의 LSTM 학습 파이프라인을 통과하지 못하고 전량 스킵되는 구조적 문제 발생.
+* **해결**:
+  * 폴더 이름의 연속성(C0189, C0190 등)을 이용해 끊어진 조각들을 하나의 긴 시퀀스로 이어 붙이는 **스티칭(Stitching) 로직** 직접 설계.
+  * 도시도로교통공사 CCTV 데이터(CSV)를 엣지 환경에 맞게 10fps로 변환 및 NPY 포맷으로 가공하여 피처 규격을 17개로 통일, 단일 학습 데이터셋으로 통합.
+* **결과**: 버려질 뻔한 데이터를 고품질 시퀀스로 복원하여, 검증 데이터 1.2만 개 및 훈련 데이터 12만 개 규모로 학습 인프라 정상화.
+
+**2. 엣지 환경(Raspberry Pi + TPU) 실시간 추론 파이프라인 최적화**
+* 제한된 메모리와 연산 능력을 가진 Raspberry Pi 5 환경에서 YOLOv8 객체 탐지와 LSTM 경로 예측이 지연 없이 맞물려 돌아가도록 시스템 아키텍처 및 데이터 전달 구조 최적화 중. (2026.07 완성 목표)
+
+<br>
+
+## 🏗 시스템 아키텍처 (System Architecture)
 
 ### Hardware Configuration
 | 구분 | 장비명 | 사양 | 용도 |
@@ -39,6 +56,8 @@
 | --- | --- | --- |
 | **YOLOv8n** (객체 탐지) | Hailo-8 NPU | 이미지 병렬 연산 → NPU 최적화 |
 | **Trajectory LSTM** (경로 예측) | Raspberry Pi 5 CPU | 순차적 시계열 연산 → CPU 적합 |
+
+> 📝 **입력 방식 선택 근거**: 실시간 CCTV 연결 방식은 네트워크 지연, 하드웨어 인터페이스 오류 등 통제 불가능한 변수가 존재합니다. 사전 녹화 영상 방식은 조명, 날씨, 혼잡도 등 환경 변수를 직접 통제할 수 있어 AI 파이프라인의 정확도와 안정성을 일관되게 검증할 수 있다는 판단 하에 채택했습니다.
 
 ### Technology Stack
 * **AI Model**
@@ -67,7 +86,7 @@ HDMI-to-CSI 캡처 보드
 
 <br>
 
-## 폴더 구조 (Directory Structure)
+## 📂 폴더 구조 (Directory Structure)
 ```text
 A-PAS/
 ├── 📂 raw_data/                        # 원본 영상 모아두는 곳 (학습의 시작점)
@@ -107,9 +126,7 @@ A-PAS/
 ## 시작하기 (Getting Started)
 이 프로젝트는 **학습용 PC (Windows)** 와 **실행용 라즈베리 파이 (Embedded)** 의 환경 설정 방법이 다릅니다.
 
-### 1. 가상환경 생성 (공통)
-프로젝트 루트 경로에서 가상환경을 생성합니다.
-
+**1. 가상환경 생성 (공통)**
 ```bash
 # 가상환경 생성
 python -m venv a-pas-env
