@@ -6,29 +6,29 @@ from collections import deque
 from ultralytics import YOLO
 
 # ==========================================
-# ⚙️ [설정]
+# ⚙️ [설정] 10FPS 모델 기준
 # ==========================================
 VIDEO_PATH      = "my_video.mp4"
 YOLO_MODEL_PATH = "yolov8n.pt"
-ONNX_MODEL_PATH = "models/best_trajectory_model.ONNX"
+ONNX_MODEL_PATH = "models/best_model_10fps.onnx"
 
 IMG_W, IMG_H    = 1920, 1080
-SEQ_LENGTH      = 60
-PRED_LENGTH     = 30
+SEQ_LENGTH      = 20        # ✅ 10FPS 기준
+PRED_LENGTH     = 10        # ✅ 10FPS 기준
 INPUT_SIZE      = 17
-DT              = 0.1       # 10FPS 기준
+DT              = 0.1       # ✅ 10FPS 기준
 
 # 30FPS 영상 → 10FPS 샘플링
 VIDEO_FPS       = 30
-TARGET_FPS      = 30
-SAMPLE_INTERVAL = VIDEO_FPS // TARGET_FPS  # = 3
+TARGET_FPS      = 10        # ✅ 수정
+SAMPLE_INTERVAL = VIDEO_FPS // TARGET_FPS  # = 3 ✅
 
 # 속도 스무딩
-SMOOTH_WINDOW   = 5         # 이동평균 윈도우 크기
+SMOOTH_WINDOW   = 5
 
 # 충돌 판정 기준
-COLLISION_DIST  = 80        # px 이하면 위험
-COLLISION_TTC   = 3         # 초 이하면 위험
+COLLISION_DIST  = 80
+COLLISION_TTC   = 3
 
 # 클래스 매핑
 CLASS_MAP = {0: 0, 2: 1, 5: 2, 7: 3, 3: 4}
@@ -53,6 +53,7 @@ track_history    = {}  # {track_id: deque([feature_vector, ...])}
 prev_boxes       = {}  # {track_id: box}
 predictions      = {}  # {track_id: pred_path}
 velocity_history = {}  # {track_id: deque([[vx, vy], ...])}
+prev_velocity    = {}  # 가속도 계산용
 
 # ==========================================
 # 🔧 [유틸 함수]
@@ -77,13 +78,23 @@ def compute_features(box, prev_box, track_id, dt=DT):
     vx = float(np.mean([v[0] for v in velocity_history[track_id]]))
     vy = float(np.mean([v[1] for v in velocity_history[track_id]]))
 
+    # ✅ 가속도 계산 (이전 속도 기반)
+    if track_id in prev_velocity:
+        ax = (vx - prev_velocity[track_id][0]) / dt
+        ay = (vy - prev_velocity[track_id][1]) / dt
+    else:
+        ax, ay = 0.0, 0.0
+
+    # 현재 속도 저장 (다음 프레임 가속도 계산용)
+    prev_velocity[track_id] = [vx, vy]
+
     speed   = np.sqrt(vx**2 + vy**2)
     heading = np.arctan2(vy, vx)
 
     physics = np.array([
         x / IMG_W,   y / IMG_H,
         vx / IMG_W,  vy / IMG_H,
-        0.0,         0.0,            # 가속도 (단순화)
+        ax / IMG_W,  ay / IMG_H,  # ✅ 실제 가속도
         speed / diag,
         np.sin(heading), np.cos(heading),
         w / IMG_W,   h / IMG_H,
@@ -288,6 +299,6 @@ finally:
         print(f"  최소 Latency      : {arr.min():.2f}ms")
         print(f"  최대 Latency      : {arr.max():.2f}ms")
         print(f"  평균 FPS          : {1000/arr.mean():.1f}")
-        print(f"  모델 ADE          : 5.16px")
-        print(f"  모델 FDE          : 9.11px")
+        print(f"  모델 ADE          : 3.76px")
+        print(f"  모델 FDE          : 6.21px")
         print("="*50)
